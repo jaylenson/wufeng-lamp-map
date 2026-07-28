@@ -40,17 +40,16 @@
       color:#fff; border-radius:6px; cursor:pointer;
   }
   #search-btn:hover { background:#245a99; }
+  #search-reset-btn {
+      flex-shrink:0; font-size:13px; padding:6px 10px; border:1px solid #ccc;
+      background:#f5f5f5; color:#555; border-radius:6px; cursor:pointer;
+  }
+  #search-reset-btn:hover { background:#e8e8e8; }
   #search-message { font-size:11.5px; padding-top:4px; min-height:14px; }
   #search-message.error { color:#c0392b; }
   #search-message.success { color:#1a7f37; }
-  @keyframes search-arrow-bounce {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-8px); }
-  }
   .search-arrow-icon {
-      font-size:26px; color:#ff2d55; text-align:center; line-height:1;
-      text-shadow:-1px -1px 0 #fff,1px -1px 0 #fff,-1px 1px 0 #fff,1px 1px 0 #fff;
-      animation: search-arrow-bounce 0.8s ease-in-out infinite;
+      filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff);
   }
 
   /* ---- 右側：經緯度批次查詢面板 ---- */
@@ -221,6 +220,7 @@
       <div class="search-row">
         <input type="text" id="search-input" placeholder="輸入圖號座標，如 G5318GD14">
         <button id="search-btn">搜尋</button>
+        <button id="search-reset-btn" title="清除搜尋標記">清除</button>
       </div>
       <div id="search-message"></div>
     </div>
@@ -689,12 +689,17 @@ function decodeSearchCode(raw) {
 const searchInput = document.getElementById('search-input');
 const searchBtn = document.getElementById('search-btn');
 const searchMsg = document.getElementById('search-message');
-let searchCircle = null;
+const searchResetBtn = document.getElementById('search-reset-btn');
 let searchArrow = null;
 
 function clearSearchMarkers() {
-    if (searchCircle) { map.removeLayer(searchCircle); searchCircle = null; }
     if (searchArrow) { map.removeLayer(searchArrow); searchArrow = null; }
+}
+
+function resetSearch() {
+    clearSearchMarkers();
+    searchInput.value = '';
+    showSearchMessage('', '');
 }
 
 function showSearchMessage(text, cls) {
@@ -722,25 +727,34 @@ function doSearch() {
     const { lat, lon, code } = result;
     map.flyTo([lat, lon], 19, { duration: 0.8 });
 
-    searchCircle = L.circleMarker([lat, lon], {
-        radius: 16, color: '#ff2d55', weight: 3, fill: false, opacity: 0.9,
-    }).addTo(map);
-    searchCircle.bindPopup(
-        `<b>搜尋座標</b>：${code}<br><b>經緯度</b>：${lat.toFixed(6)}, ${lon.toFixed(6)}`
-    ).openPopup();
-
+    // 只用一個靜止(不會動、不會跳)的細長箭頭標示位置，刻意不加圓圈——圓圈本身
+    // 可以被點擊(會蓋住底下的路燈資料點、搶走點擊)，拿掉之後底下台帳的點位優先
+    // 可以被點到。箭頭尖端跟目標點之間刻意留一段空隙(GAP_PX)，一樣是為了不要
+    // 蓋住台帳點位；箭頭本身 interactive:false，滑鼠事件不會被它攔截。
+    const ARROW_W = 20, SHAFT_LEN = 42, HEAD_LEN = 16, GAP_PX = 12;
+    const totalH = SHAFT_LEN + HEAD_LEN;
+    const svg = `
+        <svg width="${ARROW_W}" height="${totalH}" viewBox="0 0 ${ARROW_W} ${totalH}"
+             xmlns="http://www.w3.org/2000/svg">
+            <line x1="${ARROW_W/2}" y1="2" x2="${ARROW_W/2}" y2="${SHAFT_LEN}"
+                  stroke="#ff2d55" stroke-width="2.5" stroke-linecap="round"/>
+            <polygon points="${ARROW_W/2},${totalH} ${ARROW_W/2-7},${SHAFT_LEN} ${ARROW_W/2+7},${SHAFT_LEN}"
+                     fill="#ff2d55"/>
+        </svg>`;
     const arrowIcon = L.divIcon({
-        className: '',
-        html: '<div class="search-arrow-icon">&#9660;</div>',
-        iconSize: [26, 26],
-        iconAnchor: [13, -6], // 讓箭頭尖端往上偏，懸浮在目標點正上方
+        className: 'search-arrow-icon',
+        html: svg,
+        iconSize: [ARROW_W, totalH],
+        // 尖端(totalH)再往下留 GAP_PX 的空隙才是實際目標點，箭頭不會蓋住底下的資料點
+        iconAnchor: [ARROW_W / 2, totalH + GAP_PX],
     });
     searchArrow = L.marker([lat, lon], { icon: arrowIcon, interactive: false }).addTo(map);
 
-    showSearchMessage(`已定位到 ${code}`, 'success');
+    showSearchMessage(`已定位到 ${code}（${lat.toFixed(6)}, ${lon.toFixed(6)}）`, 'success');
 }
 
 searchBtn.addEventListener('click', doSearch);
+searchResetBtn.addEventListener('click', resetSearch);
 searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') doSearch();
 });
